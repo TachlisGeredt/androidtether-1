@@ -1,2 +1,5 @@
 androidtetherd
+androidtether-ui
+*.o
+*.dSYM/
 .DS_Store
