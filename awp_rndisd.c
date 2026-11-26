@@ -159,15 +159,6 @@ static int awp_xchg(awp_dev *d, uint8_t *msg, uint8_t *resp, int rmax)
     return -1;
 }
 
-static void awp_rndis_halt(awp_dev *d)
-{
-    uint8_t msg[12];
-    awp_wr(msg, 3);
-    awp_wr(msg + 4, 12);
-    awp_wr(msg + 8, ++d->awp_reqid);
-    awp_ctl_send(d, msg, 12);
-}
-
 static int awp_rndis_init(awp_dev *d)
 {
     uint8_t msg[32], resp[AWP_CTL_BUF];
@@ -216,14 +207,6 @@ static int awp_rndis_init(awp_dev *d)
         awp_log("set packet filter failed");
         return -1;
     }
-
-    if (d->awp_ep_int) {
-        uint8_t n[16];
-        int got, i;
-        for (i = 0; i < 8; i++)
-            if (libusb_interrupt_transfer(d->awp_h, d->awp_ep_int, n, sizeof n, &got, 50) != 0)
-                break;
-    }
     return 0;
 }
 
@@ -269,8 +252,6 @@ static int awp_feth_create(awp_dev *d)
     if (awp_run("/sbin/ifconfig %s create >/dev/null 2>&1", a) ||
         awp_run("/sbin/ifconfig %s create >/dev/null 2>&1", b) ||
         awp_run("/sbin/ifconfig %s peer %s >/dev/null 2>&1", a, b) ||
-        awp_run("/sbin/ifconfig %s lladdr %02x:%02x:%02x:%02x:%02x:%02x >/dev/null 2>&1", a,
-                d->awp_mac[0], d->awp_mac[1], d->awp_mac[2], d->awp_mac[3], d->awp_mac[4], d->awp_mac[5]) ||
         awp_run("/sbin/ifconfig %s up", a) || awp_run("/sbin/ifconfig %s up", b))
         return -1;
     return 0;
@@ -448,30 +429,23 @@ static int awp_healthy(const char *name)
 
 static void awp_supervise(awp_dev *d)
 {
-    int bad = 0, retries = 0, grace = 10;
+    int bad = 0, grace = 8;
     while (d->awp_alive && !awp_quit) {
         sleep(1);
         if (!d->awp_alive || awp_quit)
             break;
         if (awp_healthy(d->awp_eth)) {
             bad = 0;
-            retries = 0;
             grace = 4;
             continue;
         }
         if (++bad < grace)
             continue;
-        if (retries >= 2) {
-            awp_log("%s stuck without address, resetting session", d->awp_eth);
-            d->awp_alive = 0;
-            break;
-        }
         awp_log("%s lost its address, restoring", d->awp_eth);
         awp_run("/sbin/ifconfig %s up", d->awp_eth);
         awp_run("/sbin/ifconfig %s up", d->awp_peer);
         awp_run("/usr/sbin/ipconfig set %s DHCP", d->awp_eth);
         bad = 0;
-        retries++;
         grace = 10;
     }
 }
@@ -539,8 +513,6 @@ out:
     if (d->awp_bpf >= 0)
         close(d->awp_bpf);
     if (d->awp_h) {
-        if (claimed_c && up)
-            awp_rndis_halt(d);
         if (claimed_d)
             libusb_release_interface(d->awp_h, d->awp_data_if);
         if (claimed_c)
