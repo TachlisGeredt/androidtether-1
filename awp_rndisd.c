@@ -173,10 +173,6 @@ static int awp_rndis_init(awp_dev *d)
     uint8_t msg[32], resp[AWP_CTL_BUF];
     uint32_t mofs;
     int r;
-    libusb_clear_halt(d->awp_h, d->awp_ep_in);
-    libusb_clear_halt(d->awp_h, d->awp_ep_out);
-    if (d->awp_ep_int)
-        libusb_clear_halt(d->awp_h, d->awp_ep_int);
 
     memset(msg, 0, sizeof msg);
     awp_wr(msg, 2);
