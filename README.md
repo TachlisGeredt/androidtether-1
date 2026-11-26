@@ -4,7 +4,7 @@
 
 <h1 align="center">androidtether</h1>
 
-<p align="center"><b>Android USB tethering for Mac. No kernel extension. No app. Plug in, it works.</b></p>
+<p align="center"><b>Android USB tethering for Mac. No kernel extension. Lightweight menu bar status icon. Plug in, it works.</b></p>
 
 <p align="center">
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/aarif2/androidtether?color=22d3a6"></a>
@@ -28,10 +28,10 @@ macOS cannot talk to an Android phone in USB tethering mode. The phone speaks RN
 
 **androidtether** fixes that with a tiny background service. Turn on USB tethering and a network interface appears on your Mac, with an address from the phone and a working connection. Turn it off or unplug and the interface goes away. With no phone attached, it does nothing.
 
-- **Automatic.** No window, no menu bar icon, no clicking Connect.
+- **Automatic.** No window, no clicking Connect. A lightweight menu bar icon appears only while tethered, showing status, interface, click-to-copy IP, and live traffic.
 - **Any Android phone** that tethers over RNDIS. Plug in, no pairing.
 - **Userspace.** No kernel extension, no reduced security, no SIP changes.
-- **Small.** One C file, one dependency (libusb, linked statically).
+- **Small.** One C daemon ([awp_rndisd.c](awp_rndisd.c)) + one Objective-C menu bar companion ([awp_menubar.m](awp_menubar.m)), one dependency (libusb, linked statically).
 
 ## Install
 
@@ -85,20 +85,22 @@ flowchart LR
     F --> M["macOS network stack<br/>DHCP, routing"]
 ```
 
-1. The service checks USB every 2 seconds for an RNDIS interface.
-2. On a match it does the RNDIS handshake and reads the phone's MAC address.
-3. It creates a `feth` virtual Ethernet pair and bridges frames between the phone and the pair.
+1. The service checks USB every 2 seconds for an RNDIS interface (retrying briefly if macOS's `AppleUserECM` probes it on connect).
+2. On a match it does the RNDIS handshake and enables packet filtering.
+3. It creates a `feth` virtual Ethernet pair (keeping its kernel-assigned MAC so macOS `configd` never caches a stale MAC during DHCP) and bridges frames between the phone and the pair.
 4. It runs DHCP on the interface, so macOS gets an address and gateway from the phone.
 5. On unplug or tethering off, it removes the interface.
+6. A lightweight user-session menu bar agent (`androidtether-ui`, 0% idle CPU via `SCDynamicStore`) displays a tethering icon while `feth` is active, with status, interface, click-to-copy IP, and live ↓/↑ traffic.
 
 ## Compatibility
 
 | Phone | macOS | Status |
 | --- | --- | --- |
 | Samsung (USB ID `04e8:6864`) | macOS 27, Apple Silicon | Works |
+| MediaTek / FIG-F52 (USB ID `0e8d:2004`) | macOS, Intel | Works |
 | Your phone | | [Report it](https://github.com/aarif2/androidtether/issues/new?template=phone-report.yml) |
 
-Only RNDIS phones need this. Phones that offer CDC-NCM or CDC-ECM work on macOS natively. Intel Macs should work but are untested.
+Only RNDIS phones need this. Phones that offer CDC-NCM or CDC-ECM work on macOS natively.
 
 ## Compared to the alternatives
 
@@ -106,7 +108,7 @@ Only RNDIS phones need this. Phones that offer CDC-NCM or CDC-ECM work on macOS 
 | --- | --- | --- | --- | --- |
 | Works on Apple Silicon | Yes | Only with reduced security | Yes | Yes |
 | Kernel extension | No | Yes | No | No |
-| GUI app | No | No | Yes | No |
+| Menu bar status | Lightweight icon | No | Full GUI app | Built-in |
 | Last upstream commit | Active | Feb 2023 | Jul 2026 | n/a |
 
 ## Notes
@@ -114,7 +116,7 @@ Only RNDIS phones need this. Phones that offer CDC-NCM or CDC-ECM work on macOS 
 - **Interface name.** It is `fethN`, not `eth0`. macOS does not allow renaming interfaces.
 - **System Settings.** The DHCP-created service is temporary and does not appear in System Settings > Network. `ifconfig` and `netstat -rn` show it.
 - **Routing.** macOS decides route priority. If Wi-Fi is first in your service order it stays first, and the phone carries traffic when Wi-Fi drops.
-- **Root.** The service runs as root, because creating virtual interfaces and opening `/dev/bpf` require it. The whole thing is [one file](awp_rndisd.c). Read it.
+- **Root.** The daemon ([awp_rndisd.c](awp_rndisd.c)) runs as root because creating virtual interfaces and opening `/dev/bpf` require it. The menu bar icon ([awp_menubar.m](awp_menubar.m)) runs as a lightweight unprivileged user LaunchAgent.
 
 ## Troubleshooting
 
